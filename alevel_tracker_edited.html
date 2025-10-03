@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A-Level Performance Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <!-- Firebase (compat) — replace config with your project credentials -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); }
+        .card-hover { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15); }
+        .gradient-text { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); transition: all 0.3s ease; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4); }
+        .grade-badge { animation: fadeInScale 0.3s ease-out; }
+        @keyframes fadeInScale { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+        .nav-btn { position: relative; overflow: hidden; }
+        .nav-btn::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.2); transition: left 0.3s ease; }
+        .nav-btn:hover::before { left: 100%; }
+        .stat-card { background: linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%); }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        .progress-ring { transform: rotate(-90deg); }
+        .attempt-timeline { position: relative; }
+        .attempt-timeline::before { content: ''; position: absolute; left: 20px; top: 0; bottom: 0; width: 2px; background: linear-gradient(180deg, #667eea 0%, #764ba2 100%); }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <div class="glass rounded-3xl shadow-2xl p-8 mb-6">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 class="text-4xl md:text-5xl font-bold gradient-text mb-2">A-Level Tracker</h1>
+                    <p class="text-gray-600 text-lg">Your journey to excellence, visualized.</p>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="exportData()" class="px-4 py-2 bg-white border-2 border-purple-200 rounded-xl hover:border-purple-400 transition-all">
+                        <span class="text-sm font-medium">📤 Export</span>
+                    </button>
+                    <button onclick="document.getElementById('import-file').click()" class="px-4 py-2 bg-white border-2 border-purple-200 rounded-xl hover:border-purple-400 transition-all">
+                        <span class="text-sm font-medium">📥 Import</span>
+                    </button>
+                    <input type="file" id="import-file" accept=".json" onchange="importData(event)" class="hidden">
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            <button onclick="showView('dashboard')" class="nav-btn btn-primary text-white px-6 py-4 rounded-2xl font-semibold text-lg shadow-lg">📊 Dashboard</button>
+            <button onclick="showView('add')" class="nav-btn bg-white text-gray-700 px-6 py-4 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transition-all">➕ Add Attempt</button>
+            <button onclick="showView('charts')" class="nav-btn bg-white text-gray-700 px-6 py-4 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transition-all">📈 Analytics</button>
+            <button onclick="showView('whatif')" class="nav-btn bg-white text-gray-700 px-6 py-4 rounded-2xl font-semibold text-lg shadow-lg hover:shadow-xl transition-all">🔮 What-If</button>
+        </div>
+
+        <!-- Dashboard View -->
+        <div id="dashboard-view" class="view">
+            <!-- Filters -->
+            <div class="glass rounded-2xl shadow-xl p-6 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Subject</label>
+                        <select id="subject-filter" onchange="filterDashboard()" class="w-full p-3 border-2 border-gray-200 rounded-xl transition-all">
+                            <option value="all">All Subjects</option>
+                            <option value="Accounting">📊 Accounting</option>
+                            <option value="Economics">💰 Economics</option>
+                            <option value="ICT">💻 ICT</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Year</label>
+                        <select id="year-filter" onchange="filterDashboard()" class="w-full p-3 border-2 border-gray-200 rounded-xl transition-all">
+                            <option value="all">All Years</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Attempt #</label>
+                        <select id="attempt-filter" onchange="filterDashboard()" class="w-full p-3 border-2 border-gray-200 rounded-xl transition-all">
+                            <option value="all">All Attempts</option>
+                            <option value="1">Attempt 1</option>
+                            <option value="2">Attempt 2</option>
+                            <option value="3">Attempt 3</option>
+                            <option value="4">Attempt 4</option>
+                            <option value="5">Attempt 5</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPI Cards -->
+            <div id="kpi-section" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"></div>
+
+            <!-- Milestones -->
+            <div id="milestones-section" class="mb-6"></div>
+
+            <!-- Attempts Grid -->
+            <div id="attempts-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        </div>
+
+        <!-- Add/Edit View -->
+        <div id="add-view" class="view hidden">
+            <div class="glass rounded-3xl shadow-2xl p-8 max-w-3xl mx-auto">
+                <h2 class="text-3xl font-bold gradient-text mb-8">Add New Attempt</h2>
+                <form id="attempt-form" onsubmit="saveAttempt(event)" class="space-y-6">
+                    <input type="hidden" id="edit-id">
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Subject</label>
+                            <select id="subject" required class="w-full p-4 border-2 border-gray-200 rounded-xl transition-all" onchange="updateFormLabels()">
+                                <option value="">Choose subject...</option>
+                                <option value="Accounting">📊 Accounting</option>
+                                <option value="Economics">💰 Economics</option>
+                                <option value="ICT">💻 ICT</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Year</label>
+                            <select id="year" required class="w-full p-4 border-2 border-gray-200 rounded-xl transition-all"></select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Attempt #</label>
+                            <select id="attempt-num" required class="w-full p-4 border-2 border-gray-200 rounded-xl transition-all">
+                                <option value="1">Attempt 1</option>
+                                <option value="2">Attempt 2</option>
+                                <option value="3">Attempt 3</option>
+                                <option value="4">Attempt 4</option>
+                                <option value="5">Attempt 5</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Paper 1 (MCQ) -->
+                    <div class="bg-purple-50 rounded-2xl p-6 border-2 border-purple-200">
+                        <h3 class="font-bold text-lg mb-4 text-purple-900">Paper 1 (MCQ)</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Marks Scored</label>
+                                <input type="number" id="p1-marks" required min="0" max="50" class="w-full p-4 border-2 border-gray-200 rounded-xl transition-all">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Time (mins)</label>
+                                <input type="number" id="p1-time" required min="0" class="w-full p-4 border-2 border-gray-200 rounded-xl transition-all">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Paper 2 (Essay) -->
+                    <div class="bg-blue-50 rounded-2xl p-6 border-2 border-blue-200">
+                        <h3 class="font-bold text-lg mb-4 text-blue-900">Paper 2 (Essay)</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Marks Scored</label>
+                                <input type="number" id="p2-marks" required min="0" class="w-full p-4 border-2 border-gray-200 rounded-xl transition-all">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Time (mins)</label>
+                                <input type="number" id="p2-time" required min="0" class="w-full p-4 border-2 border-gray-200 rounded-xl transition-all">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-4 pt-4">
+                        <button type="submit" class="flex-1 btn-primary text-white px-8 py-4 rounded-xl font-bold text-lg shadow-lg">💾 Save Attempt</button>
+                        <button type="button" onclick="clearForm()" class="px-8 py-4 bg-gray-200 text-gray-700 rounded-xl font-bold text-lg hover:bg-gray-300 transition-all">Clear</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Charts View -->
+        <div id="charts-view" class="view hidden">
+            <div class="glass rounded-2xl shadow-xl p-6 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <select id="chart-subject" onchange="updateCharts()" class="p-3 border-2 border-gray-200 rounded-xl transition-all">
+                        <option value="all">All Subjects</option>
+                        <option value="Accounting">📊 Accounting</option>
+                        <option value="Economics">💰 Economics</option>
+                        <option value="ICT">💻 ICT</option>
+                    </select>
+                    <select id="chart-year" onchange="updateCharts()" class="p-3 border-2 border-gray-200 rounded-xl transition-all">
+                        <option value="all">All Years</option>
+                    </select>
+                    <select id="chart-paper" onchange="updateCharts()" class="p-3 border-2 border-gray-200 rounded-xl transition-all">
+                        <option value="all">Both Papers</option>
+                        <option value="P1">Paper 1 Only</option>
+                        <option value="P2">Paper 2 Only</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div class="glass rounded-2xl shadow-xl p-6 card-hover">
+                    <h3 class="text-xl font-bold mb-4 gradient-text">📈 Performance Trend</h3>
+                    <canvas id="line-chart"></canvas>
+                </div>
+                <div class="glass rounded-2xl shadow-xl p-6 card-hover">
+                    <h3 class="text-xl font-bold mb-4 gradient-text">📊 Paper Comparison</h3>
+                    <canvas id="bar-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="glass rounded-2xl shadow-xl p-6 card-hover">
+                    <h3 class="text-xl font-bold mb-4 gradient-text">🎯 Grade Distribution</h3>
+                    <canvas id="radar-chart"></canvas>
+                </div>
+                <div class="glass rounded-2xl shadow-xl p-6 card-hover">
+                    <h3 class="text-xl font-bold mb-4 gradient-text">🔮 AI Predictions</h3>
+                    <div id="prediction-panel"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- What-If View -->
+        <div id="whatif-view" class="view hidden">
+            <div class="glass rounded-3xl shadow-2xl p-8 max-w-3xl mx-auto">
+                <h2 class="text-3xl font-bold gradient-text mb-8">🔮 What-If Simulator</h2>
+                <div class="mb-6">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Subject</label>
+                    <select id="whatif-subject" class="w-full p-4 border-2 border-gray-200 rounded-xl transition-all" onchange="updateWhatIfLabels()">
+                        <option value="Accounting">📊 Accounting</option>
+                        <option value="Economics">💰 Economics</option>
+                        <option value="ICT">💻 ICT</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-6 mb-6">
+                    <div class="bg-purple-50 rounded-2xl p-6 border-2 border-purple-200">
+                        <label class="block text-sm font-bold text-purple-900 mb-3" id="whatif-p1-label">Paper 1 (MCQ) Marks</label>
+                        <input type="number" id="whatif-p1" min="0" class="w-full p-4 border-2 border-purple-300 rounded-xl transition-all text-2xl font-bold text-center" oninput="calculateWhatIf()" placeholder="0">
+                    </div>
+                    <div class="bg-blue-50 rounded-2xl p-6 border-2 border-blue-200">
+                        <label class="block text-sm font-bold text-blue-900 mb-3" id="whatif-p2-label">Paper 2 (Essay) Marks</label>
+                        <input type="number" id="whatif-p2" min="0" class="w-full p-4 border-2 border-blue-300 rounded-xl transition-all text-2xl font-bold text-center" oninput="calculateWhatIf()" placeholder="0">
+                    </div>
+                </div>
+                <div id="whatif-result" class="bg-gradient-to-br from-purple-50 to-blue-50 rounded-2xl p-8 border-2 border-purple-200"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA & STATE ---
+        let attempts = []; // will be loaded from Firebase (if configured) or localStorage
+        let charts = {};
+
+        // Grade thresholds unchanged
+        const gradeThresholds = [
+            { grade: 'A', min: 75, color: '#10b981', bg: '#d1fae5' },
+            { grade: 'B', min: 65, color: '#3b82f6', bg: '#dbeafe' },
+            { grade: 'C', min: 55, color: '#f59e0b', bg: '#fef3c7' },
+            { grade: 'S', min: 35, color: '#ef4444', bg: '#fee2e2' },
+            { grade: 'W', min: 0, color: '#6b7280', bg: '#f3f4f6' }
+        ];
+
+        // --- SCORE LOGIC ---
+        function calculateScore(subject, p1Marks, p2Marks) {
+            let totalPercent = 0;
+            if (subject === 'Accounting') {
+                // Accounting: weighted (example) — adjust if needed
+                totalPercent = ((p1Marks * 4 + p2Marks) / 400) * 100;
+            } else {
+                totalPercent = p1Marks + (p2Marks / 2);
+            }
+            return Math.round(totalPercent * 100) / 100;
+        }
+
+        function getGrade(percent) {
+            for (let t of gradeThresholds) if (percent >= t.min) return t.grade;
+            return 'W';
+        }
+        function getGradeData(grade) { return gradeThresholds.find(t => t.grade === grade) || gradeThresholds[gradeThresholds.length - 1]; }
+
+        // --- UI Helpers ---
+        function initYearDropdowns() {
+            const years = Array.from({length: 11}, (_, i) => 2024 - i);
+            const yearSelects = ['year-filter', 'year', 'chart-year'];
+            yearSelects.forEach(id => {
+                const select = document.getElementById(id);
+                if (!select) return;
+                if (id === 'year-filter' || id === 'chart-year') select.innerHTML = '<option value="all">All Years</option>'; else select.innerHTML = '';
+                years.forEach(y => select.innerHTML += `<option value="${y}">${y}</option>`);
+            });
+        }
+
+        function updateFormLabels() {
+            const subject = document.getElementById('subject').value;
+            document.getElementById('p1-marks').max = 50;
+            document.getElementById('p2-marks').max = subject === 'Accounting' ? 200 : 100;
+        }
+
+        function updateWhatIfLabels() {
+            const subject = document.getElementById('whatif-subject').value;
+            document.getElementById('whatif-p1-label').textContent = 'Paper 1 (MCQ) Marks' + (subject === 'Accounting' ? ' (out of 50)' : ' (out of 50)');
+            document.getElementById('whatif-p2-label').textContent = 'Paper 2 (Essay) Marks' + (subject === 'Accounting' ? ' (out of 200)' : ' (out of 100)');
+            document.getElementById('whatif-p1').max = 50;
+            document.getElementById('whatif-p2').max = subject === 'Accounting' ? 200 : 100;
+            calculateWhatIf();
+        }
+
+        function calculateWhatIf() {
+            const subject = document.getElementById('whatif-subject').value;
+            const p1 = parseFloat(document.getElementById('whatif-p1').value) || 0;
+            const p2 = parseFloat(document.getElementById('whatif-p2').value) || 0;
+            const percent = calculateScore(subject, p1, p2);
+            const gradeData = getGradeData(getGrade(percent));
+
+            document.getElementById('whatif-result').innerHTML = `
+                <div class="text-center">
+                    <div class="inline-block px-8 py-3 rounded-2xl mb-4 font-black text-6xl grade-badge" style="background: ${gradeData.bg}; color: ${gradeData.color}">
+                        ${percent.toFixed(1)}%
+                    </div>
+                    <div class="text-3xl font-bold mb-6" style="color: ${gradeData.color}">Grade ${gradeData.grade}</div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-white rounded-xl p-4"><div class="text-sm text-gray-600 mb-1">Paper 1</div><div class="text-2xl font-bold text-purple-600">${p1}</div></div>
+                        <div class="bg-white rounded-xl p-4"><div class="text-sm text-gray-600 mb-1">Paper 2</div><div class="text-2xl font-bold text-blue-600">${p2}</div></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- PERSISTENCE: Local + Firebase Realtime Database (optional) ---
+        // Replace with your Firebase config
+        const firebaseConfig = {
+            apiKey: "AIzaSyApJnudSUCgqAsILnUm4J52FsjPBpvAqac",
+            authDomain: "past-paper-5bb3b.firebaseapp.com",
+            databaseURL: "https://past-paper-5bb3b-default-rtdb.firebaseio.com",
+            projectId: "past-paper-5bb3b",
+            storageBucket: "past-paper-5bb3b.appspot.com",
+            messagingSenderId: "546779034997",
+            appId: "1:546779034997:web:c79dd59be4748dd6b38f3c"
+        };
+
+        let firebaseEnabled = false;
+        function initFirebase() {
+            try {
+                if (!firebaseEnabled && firebaseConfig.apiKey && firebaseConfig.apiKey !== 'REPLACE_ME') {
+                    firebase.initializeApp(firebaseConfig);
+                    firebaseEnabled = true;
+                    subscribeToRemoteAttempts();
+                }
+            } catch (err) {
+                console.warn('Firebase not initialized:', err);
+            }
+        }
+
+        function writeAttemptToRemote(attempt) {
+            if (!firebaseEnabled) return;
+            firebase.firestore().collection('attempts').doc(attempt.id).set(attempt)
+                .catch(e => console.error('Firestore write error', e));
+        }
+
+        function removeAttemptRemote(id) {
+            if (!firebaseEnabled) return;
+            firebase.firestore().collection('attempts').doc(id).delete()
+                .catch(e => console.error('Firestore delete error', e));
+        }
+
+        function subscribeToRemoteAttempts() {
+            if (!firebaseEnabled) return;
+            firebase.firestore().collection('attempts')
+                .onSnapshot(snapshot => {
+                    attempts = [];
+                    snapshot.forEach(doc => attempts.push(doc.data()));
+                    saveToStorage();
+                    filterDashboard();
+                });
+        }
+
+        // Local storage is still used as offline cache
+        function saveToStorage() { localStorage.setItem('alevel_attempts', JSON.stringify(attempts)); }
+        function loadFromStorage() {
+            const stored = localStorage.getItem('alevel_attempts');
+            if (stored) attempts = JSON.parse(stored);
+            // DO NOT load dummy/sample data — per your request
+        }
+
+        // --- CRUD ---
+        function saveAttempt(e) {
+            e.preventDefault();
+            const id = document.getElementById('edit-id').value || Date.now().toString();
+            const attempt = {
+                id: id,
+                subject: document.getElementById('subject').value,
+                year: parseInt(document.getElementById('year').value),
+                attemptNum: parseInt(document.getElementById('attempt-num').value),
+                p1Marks: parseFloat(document.getElementById('p1-marks').value),
+                p1Time: parseFloat(document.getElementById('p1-time').value),
+                p2Marks: parseFloat(document.getElementById('p2-marks').value),
+                p2Time: parseFloat(document.getElementById('p2-time').value),
+                timestamp: new Date().toISOString()
+            };
+
+            attempt.totalMarks = attempt.p1Marks + attempt.p2Marks;
+            attempt.totalTime = attempt.p1Time + attempt.p2Time;
+            attempt.totalPercent = calculateScore(attempt.subject, attempt.p1Marks, attempt.p2Marks);
+            attempt.grade = getGrade(attempt.totalPercent);
+
+            const idx = attempts.findIndex(a => a.id === id);
+            if (idx >= 0) attempts[idx] = attempt; else attempts.push(attempt);
+
+            saveToStorage();
+            writeAttemptToRemote(attempt); // <-- ensure this is called
+            clearForm();
+            showView('dashboard');
+        }
+
+        function clearForm() { document.getElementById('attempt-form').reset(); document.getElementById('edit-id').value = ''; }
+
+        function editAttempt(id) {
+            const attempt = attempts.find(a => a.id === id); if (!attempt) return;
+            document.getElementById('edit-id').value = attempt.id;
+            document.getElementById('subject').value = attempt.subject;
+            document.getElementById('year').value = attempt.year;
+            document.getElementById('attempt-num').value = attempt.attemptNum;
+            document.getElementById('p1-marks').value = attempt.p1Marks;
+            document.getElementById('p1-time').value = attempt.p1Time;
+            document.getElementById('p2-marks').value = attempt.p2Marks;
+            document.getElementById('p2-time').value = attempt.p2Time;
+            updateFormLabels(); showView('add');
+        }
+
+        function deleteAttempt(id) {
+            if (!confirm('Delete this attempt?')) return;
+            attempts = attempts.filter(a => a.id !== id);
+            saveToStorage();
+            removeAttemptRemote(id);
+            filterDashboard();
+        }
+
+        // --- DASHBOARD / FILTERS ---
+        function filterDashboard() {
+            const subject = document.getElementById('subject-filter').value;
+            const year = document.getElementById('year-filter').value;
+            const attemptFilter = document.getElementById('attempt-filter').value;
+
+            let filtered = attempts.slice();
+            if (subject !== 'all') filtered = filtered.filter(a => a.subject === subject);
+            if (year !== 'all') filtered = filtered.filter(a => a.year === parseInt(year));
+            if (attemptFilter !== 'all') filtered = filtered.filter(a => a.attemptNum === parseInt(attemptFilter));
+
+            renderDashboard(filtered);
+            renderKPIs(filtered);
+            renderMilestones(filtered);
+        }
+
+        function renderDashboard(data) {
+            const grid = document.getElementById('attempts-grid');
+            if (!data || data.length === 0) {
+                grid.innerHTML = `<div class="col-span-full glass rounded-3xl p-12 text-center"><div class="text-6xl mb-4">📚</div><h3 class="text-2xl font-bold gradient-text mb-2">No attempts yet</h3><p class="text-gray-600 mb-6">Add attempts to start tracking. Removed sample data as requested.</p><button onclick="showView('add')" class="btn-primary text-white px-8 py-3 rounded-xl font-bold">Add Your First Attempt</button></div>`;
+                return;
+            }
+
+            // Group by subject-year so user can see subject separated
+            const grouped = {};
+            data.forEach(a => {
+                const key = `${a.subject}||${a.year}`;
+                if (!grouped[key]) grouped[key] = [];
+                grouped[key].push(a);
+            });
+
+            grid.innerHTML = Object.entries(grouped).map(([key, atts]) => {
+                atts.sort((a, b) => a.attemptNum - b.attemptNum);
+                const best = atts.reduce((max, a) => a.totalPercent > max.totalPercent ? a : max, atts[0]);
+                const gradeData = getGradeData(best.grade);
+                const [subject, year] = key.split('||');
+                const subjectEmoji = subject === 'Accounting' ? '📊' : subject === 'Economics' ? '💰' : '💻';
+
+                return `
+                    <div class="glass rounded-2xl shadow-xl p-6 card-hover">
+                        <div class="flex justify-between items-start mb-6">
+                            <div>
+                                <div class="text-3xl mb-2">${subjectEmoji}</div>
+                                <h3 class="font-bold text-xl text-gray-800">${subject}</h3>
+                                <p class="text-sm text-gray-500">${year}</p>
+                            </div>
+                            <div class="px-4 py-2 rounded-xl font-black text-2xl grade-badge" style="background: ${gradeData.bg}; color: ${gradeData.color}">${gradeData.grade}</div>
+                        </div>
+                        <div class="attempt-timeline space-y-4 pl-12">
+                            ${atts.map(a => {
+                                const aGradeData = getGradeData(a.grade);
+                                return `
+                                    <div class="relative">
+                                        <div class="absolute -left-12 w-10 h-10 rounded-full flex items-center justify-center font-bold text-white" style="background: ${aGradeData.color}">${a.attemptNum}</div>
+                                        <div class="bg-gray-50 rounded-xl p-4 border-2" style="border-color: ${aGradeData.color}">
+                                            <div class="flex justify-between items-center mb-2">
+                                                <span class="font-bold text-2xl" style="color: ${aGradeData.color}">${a.totalPercent}%</span>
+                                                <span class="text-xs text-gray-500">${new Date(a.timestamp).toLocaleDateString()}</span>
+                                            </div>
+                                            <div class="grid grid-cols-2 gap-2 text-xs text-gray-600 mb-3">
+                                                <div>📝 P1: ${a.p1Marks} (${a.p1Time}m)</div>
+                                                <div>📄 P2: ${a.p2Marks} (${a.p2Time}m)</div>
+                                            </div>
+                                            <div class="flex gap-2">
+                                                <button onclick="editAttempt('${a.id}')" class="flex-1 bg-blue-500 text-white px-3 py-2 rounded-lg text-xs font-semibold hover:bg-blue-600 transition-all">✏️ Edit</button>
+                                                <button onclick="deleteAttempt('${a.id}')" class="flex-1 bg-red-500 text-white px-3 py-2 rounded-lg text-xs font-semibold hover:bg-red-600 transition-all">🗑️ Delete</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderKPIs(data) {
+            const kpiSection = document.getElementById('kpi-section');
+            if (!data || data.length === 0) { kpiSection.innerHTML = ''; return; }
+
+            const avgPercent = data.reduce((sum, a) => sum + a.totalPercent, 0) / data.length;
+            const bestPercent = Math.max(...data.map(a => a.totalPercent));
+            const avgTime = data.reduce((sum, a) => sum + a.totalTime, 0) / data.length;
+            const stdDev = Math.sqrt(data.reduce((sum, a) => sum + Math.pow(a.totalPercent - avgPercent, 2), 0) / data.length);
+            const consistency = Math.max(0, 100 - stdDev);
+
+            kpiSection.innerHTML = `
+                <div class="stat-card rounded-2xl p-6 shadow-lg card-hover"><div class="text-4xl mb-3">📊</div><div class="text-sm text-gray-600 font-semibold mb-1">Average Score</div><div class="text-3xl font-black text-blue-600">${avgPercent.toFixed(1)}%</div></div>
+                <div class="stat-card rounded-2xl p-6 shadow-lg card-hover"><div class="text-4xl mb-3">🏆</div><div class="text-sm text-gray-600 font-semibold mb-1">Best Score</div><div class="text-3xl font-black text-green-600">${bestPercent.toFixed(1)}%</div></div>
+                <div class="stat-card rounded-2xl p-6 shadow-lg card-hover"><div class="text-4xl mb-3">⏱️</div><div class="text-sm text-gray-600 font-semibold mb-1">Avg Time</div><div class="text-3xl font-black text-purple-600">${avgTime.toFixed(0)}m</div></div>
+                <div class="stat-card rounded-2xl p-6 shadow-lg card-hover"><div class="text-4xl mb-3">🎯</div><div class="text-sm text-gray-600 font-semibold mb-1">Consistency</div><div class="text-3xl font-black text-orange-600">${consistency.toFixed(0)}%</div></div>
+            `;
+        }
+
+        function renderMilestones(data) {
+            const section = document.getElementById('milestones-section');
+            if (!data || data.length === 0) { section.innerHTML = ''; return; }
+
+            const milestones = [35, 50, 55, 60, 65, 70, 75, 80, 85, 90];
+            const achieved = milestones.filter(m => data.some(a => a.totalPercent >= m));
+            const next = milestones.find(m => !achieved.includes(m));
+            const progress = (achieved.length / milestones.length) * 100;
+
+            section.innerHTML = `
+                <div class="glass rounded-2xl shadow-xl p-6">
+                    <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-xl gradient-text">🎯 Milestones</h3><span class="text-sm font-semibold text-gray-600">${achieved.length}/${milestones.length} achieved</span></div>
+                    <div class="w-full bg-gray-200 rounded-full h-3 mb-4"><div class="h-3 rounded-full transition-all duration-500" style="width: ${progress}%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);"></div></div>
+                    <div class="flex flex-wrap gap-3">${milestones.map(m => `<div class="px-4 py-2 rounded-xl font-bold text-sm transition-all ${achieved.includes(m) ? 'bg-gradient-to-r from-green-400 to-green-600 text-white shadow-lg' : 'bg-gray-200 text-gray-500'}">${m}% ${achieved.includes(m) ? '✓' : ''}</div>`).join('')}</div>
+                    ${next ? `<div class="mt-4 p-4 bg-yellow-50 rounded-xl border-2 border-yellow-200"><span class="text-sm font-semibold text-yellow-800">🎯 Next milestone: <strong>${next}%</strong> - Keep pushing!</span></div>` : `<div class="mt-4 p-4 bg-green-50 rounded-xl border-2 border-green-200"><span class="text-sm font-semibold text-green-800">🎉 All milestones achieved! You're a star!</span></div>`}
+                </div>
+            `;
+        }
+
+        // --- PREDICTION ---
+        function predictPerformance(subject, data) {
+            // Ensure predictions are computed only using attempts for that subject
+            const subjectOnly = data.filter(a => a.subject === subject);
+            if (subjectOnly.length < 2) return { predicted: null, confidence: null, grade: null };
+
+            subjectOnly.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+            const scores = subjectOnly.map(a => a.totalPercent);
+            const latest = scores[scores.length-1];
+            const best = Math.max(...scores);
+            const baseline = 0.6*latest + 0.4*best;
+
+            // simple linear trend if enough points
+            let trend = baseline;
+            if (scores.length >= 3) {
+                const n = scores.length; const x = scores.map((_, i) => i);
+                const sumX = x.reduce((a,b)=>a+b,0); const sumY = scores.reduce((a,b)=>a+b,0);
+                const sumXY = x.reduce((s,xi,i)=>s + xi*scores[i],0);
+                const sumX2 = x.reduce((s,xi)=>s + xi*xi,0);
+                const slope = (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX || 1);
+                const intercept = (sumY - slope*sumX) / n;
+                trend = slope*(n) + intercept;
+            }
+
+            const weights = scores.map((_, i) => Math.exp(-0.3*(scores.length - i -1)));
+            const sumW = weights.reduce((a,b)=>a+b,0);
+            const movingAvg = scores.reduce((s,v,i)=>s + v*weights[i],0)/ (sumW || 1);
+
+            const predicted = 0.4*baseline + 0.35*trend + 0.25*movingAvg;
+            const estimates = [baseline, trend, movingAvg];
+            const variance = estimates.reduce((s,e)=> s + Math.pow(e - predicted, 2), 0)/3;
+            const confidence = Math.max(1, Math.min(10, 10 - Math.sqrt(variance)/2));
+
+            return { predicted: Math.max(0, Math.min(100, predicted)), confidence, grade: getGrade(predicted), components: { baseline, trend, movingAvg } };
+        }
+
+        // --- CHARTS ---
+        function updateCharts() {
+            const subject = document.getElementById('chart-subject').value;
+            const year = document.getElementById('chart-year').value;
+            const paper = document.getElementById('chart-paper').value;
+
+            let data = attempts.slice();
+            if (subject !== 'all') data = data.filter(a => a.subject === subject);
+            if (year !== 'all') data = data.filter(a => a.year === parseInt(year));
+            if (paper !== 'all') data = data.filter(a => a.paper === paper);
+            data.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+            renderLineChart(data);
+            renderBarChart(data);
+            renderRadarChart(data);
+            renderPredictionPanel(subject !== 'all' ? subject : null, data);
+        }
+
+        function renderLineChart(data) {
+            const ctx = document.getElementById('line-chart'); if (charts.line) charts.line.destroy();
+            const labels = data.map(a => `${a.subject} ${a.year} ${a.paper} • #${a.attemptNum} • ${new Date(a.timestamp).toLocaleDateString()}`);
+            const scores = data.map(a => a.totalPercent);
+            charts.line = new Chart(ctx, { type: 'line', data: { labels, datasets: [{ label: 'Score %', data: scores, borderColor: '#667eea', backgroundColor: 'rgba(102, 126, 234, 0.1)', borderWidth: 3, tension: 0.4, fill: true, pointRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100 }, x: { grid: { display: false } } } } });
+        }
+
+        function renderBarChart(data) {
+            const ctx = document.getElementById('bar-chart'); if (charts.bar) charts.bar.destroy();
+            const p1Avg = data.reduce((sum, a) => sum + (a.subject === 'Accounting' ? a.p1Marks*4 : a.p1Marks), 0) / (data.length || 1);
+            const p2Avg = data.reduce((sum, a) => sum + (a.subject === 'Accounting' ? a.p2Marks/2 : a.p2Marks/2), 0) / (data.length || 1);
+            charts.bar = new Chart(ctx, { type: 'bar', data: { labels: ['Paper 1', 'Paper 2'], datasets: [{ label: 'Avg Score', data: [p1Avg, p2Avg], backgroundColor: ['#667eea', '#764ba2'], borderRadius: 10 }] }, options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true }, x: { grid: { display: false } } } } });
+        }
+
+        function renderRadarChart(data) {
+            const ctx = document.getElementById('radar-chart'); if (charts.radar) charts.radar.destroy();
+            const gradeCounts = { A:0, B:0, C:0, S:0, W:0 }; data.forEach(a=> gradeCounts[a.grade]++);
+            charts.radar = new Chart(ctx, { type: 'radar', data: { labels: ['A','B','C','S','W'], datasets: [{ label:'Grades', data:[gradeCounts.A,gradeCounts.B,gradeCounts.C,gradeCounts.S,gradeCounts.W], backgroundColor:'rgba(102,126,234,0.2)', borderColor:'#667eea', borderWidth:3 }] }, options: { responsive:true, maintainAspectRatio:true, plugins:{ legend:{ display:false } }, scales:{ r:{ beginAtZero:true } } } });
+        }
+
+        function renderPredictionPanel(subject, data) {
+            const panel = document.getElementById('prediction-panel');
+            if (!subject) { panel.innerHTML = `<div class="text-center py-12"><div class="text-6xl mb-4">🔮</div><p class="text-gray-500">Select a single subject with at least 2 attempts to see AI predictions</p></div>`; return; }
+            const pred = predictPerformance(subject, data);
+            if (!pred.predicted) { panel.innerHTML = `<div class="text-center py-12"><div class="text-6xl mb-4">📊</div><p class="text-gray-500">Not enough data for prediction</p></div>`; return; }
+
+            const ci = pred.confidence; const lower = Math.max(0, pred.predicted - (10 - ci)*2); const upper = Math.min(100, pred.predicted + (10-ci)*2); const gradeData = getGradeData(pred.grade);
+            panel.innerHTML = `
+                <div class="text-center mb-6">
+                    <div class="inline-block px-8 py-4 rounded-2xl mb-4 grade-badge" style="background: ${gradeData.bg}"><div class="text-5xl font-black mb-2" style="color: ${gradeData.color}">${pred.predicted.toFixed(1)}%</div><div class="text-xl font-bold" style="color: ${gradeData.color}">Grade ${pred.grade}</div></div>
+                    <div class="text-sm text-gray-600 mb-4">95% Confidence: ${lower.toFixed(1)}% - ${upper.toFixed(1)}%</div>
+                    <div class="bg-gray-200 rounded-full h-3 overflow-hidden"><div class="h-3 rounded-full transition-all duration-500" style="width: ${ci*10}%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);"></div></div>
+                    <div class="text-xs text-gray-500 mt-2">Prediction Confidence: ${(ci*10).toFixed(0)}%</div>
+                </div>
+                <div class="space-y-3">
+                    <div class="bg-purple-50 rounded-xl p-4 border-2 border-purple-200"><div class="flex justify-between items-center"><span class="text-sm font-semibold text-purple-900">Baseline (Latest + Best)</span><span class="font-bold text-purple-700">${pred.components.baseline.toFixed(1)}%</span></div></div>
+                    <div class="bg-blue-50 rounded-xl p-4 border-2 border-blue-200"><div class="flex justify-between items-center"><span class="text-sm font-semibold text-blue-900">Trend (Regression)</span><span class="font-bold text-blue-700">${pred.components.trend.toFixed(1)}%</span></div></div>
+                    <div class="bg-green-50 rounded-xl p-4 border-2 border-green-200"><div class="flex justify-between items-center"><span class="text-sm font-semibold text-green-900">Moving Average</span><span class="font-bold text-green-700">${pred.components.movingAvg.toFixed(1)}%</span></div></div>
+                </div>
+            `;
+        }
+
+        // --- IMPORT / EXPORT ---
+        function exportData() { const dataStr = JSON.stringify(attempts, null, 2); const blob = new Blob([dataStr], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `alevel_data_${new Date().toISOString().split('T')[0]}.json`; a.click(); URL.revokeObjectURL(url); }
+        function importData(event) {
+            const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = function(e){ try{ const imported = JSON.parse(e.target.result); if (Array.isArray(imported)) { attempts = imported; saveToStorage(); filterDashboard(); updateCharts(); } else alert('Imported file must be an array of attempts'); }catch(err){ alert('Error importing data: ' + err.message); } }; reader.readAsText(file); event.target.value = ''; }
+
+        // --- UTILITIES ---
+        function showView(view) { document.querySelectorAll('.view').forEach(v => v.classList.add('hidden')); document.getElementById(view + '-view').classList.remove('hidden'); if (view === 'dashboard') filterDashboard(); if (view === 'charts') updateCharts(); if (view === 'whatif') calculateWhatIf(); }
+
+        // --- BOOT ---
+        window.onload = function() { initYearDropdowns(); loadFromStorage(); initFirebase(); filterDashboard(); updateWhatIfLabels(); };
+    </script>
+</body>
+</html>
+</html>
